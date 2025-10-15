@@ -1,54 +1,54 @@
 name: Build RustDesk
 
 on:
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - name: 下载源代码和子模块
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-        
-    - name: 安装 Rust (官方方法)
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-pc-windows-msvc
-        
-    - name: 安装编译工具
+
+    - name: Install Rust
+      run: |
+        curl -sSf -o rustup-init.exe https://win.rustup.rs/x86_64
+        .\rustup-init.exe -y --default-toolchain stable
+        echo "C:\Users\runneradmin\.cargo\bin" >> $env:GITHUB_PATH
+
+    - name: Install dependencies
       run: |
         choco install -y nasm yasm
-        
-    - name: 编译 RustDesk
+
+    - name: Build
       run: |
         cargo build --release --bin rustdesk
-        mkdir release
-        copy target\release\rustdesk.exe release\
-        
-    - name: 上传编译结果
+
+    - name: Upload Windows binary
       uses: actions/upload-artifact@v4
       with:
         name: rustdesk-windows
-        path: release/
+        path: target/release/rustdesk.exe
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
-    - name: 下载源代码和子模块
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-        
-    - name: 安装 Rust (官方方法)
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-gnu
-        
-    - name: 安装 Linux 依赖
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -57,15 +57,13 @@ jobs:
           libxdo-dev libxfixes-dev libxcb-shape0-dev \
           libxcb-xfixes0-dev libasound2-dev libpulse-dev \
           cmake pkg-config
-        
-    - name: 编译 RustDesk
+
+    - name: Build
       run: |
         cargo build --release --bin rustdesk
-        mkdir -p release
-        cp target/release/rustdesk release/
-        
-    - name: 上传编译结果
+
+    - name: Upload Linux binary
       uses: actions/upload-artifact@v4
       with:
         name: rustdesk-linux
-        path: release/
+        path: target/release/rustdesk
