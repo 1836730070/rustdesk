@@ -1,7 +1,7 @@
 name: Build RustDesk
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build-windows:
@@ -12,10 +12,11 @@ jobs:
       with:
         submodules: recursive
         
-    - name: 安装 Rust (最简方法)
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$USERPROFILE\.cargo\bin" >> $GITHUB_PATH
+    - name: 安装 Rust (官方方法)
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
         
     - name: 安装编译工具
       run: |
@@ -41,20 +42,21 @@ jobs:
       with:
         submodules: recursive
         
-    - name: 安装 Rust (最简方法)
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    - name: 安装 Rust (官方方法)
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
         
     - name: 安装 Linux 依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           g++ gcc git curl wget nasm yasm \
-          libgtk-3-dev clang pkg-config \
-          libx11-dev libxext-dev libxrandr-dev \
-          libxcb-render0-dev libxcb-shape0-dev \
-          libxcb-xfixes0-dev libasound2-dev libpulse-dev
+          libgtk-3-dev clang libxcb-randr0-dev \
+          libxdo-dev libxfixes-dev libxcb-shape0-dev \
+          libxcb-xfixes0-dev libasound2-dev libpulse-dev \
+          cmake pkg-config
         
     - name: 编译 RustDesk
       run: |
