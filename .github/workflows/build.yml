@@ -1,14 +1,10 @@
-name: Build RustDesk Windows Simple
+name: Debug Build Issues
 
 on:
   workflow_dispatch:
 
-env:
-  RUST_BACKTRACE: full
-  VCPKGRS_DYNAMIC: 1
-
 jobs:
-  build-windows:
+  diagnose:
     runs-on: windows-latest
     
     steps:
@@ -17,44 +13,50 @@ jobs:
       with:
         submodules: recursive
         
-    - name: 设置 MSVC 环境
+    - name: 显示系统信息
       run: |
-        # 调用 vcvarsall 来设置环境
-        echo "Setting up MSVC environment..."
-        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        echo "系统信息:"
+        systeminfo | select-string "OS Name","OS Version"
+        echo "磁盘信息:"
+        Get-PSDrive -PSProvider FileSystem
+        echo "环境变量:"
+        echo "PATH=$env:PATH"
+        echo "RUSTUP_HOME=$env:RUSTUP_HOME"
+        echo "CARGO_HOME=$env:CARGO_HOME"
         
-    - name: 安装 Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-pc-windows-msvc
-        
-    - name: 安装构建工具
+    - name: 检查 Rust 工具链
       run: |
-        choco install -y nasm yasm
+        rustc --version
+        cargo --version
+        rustup toolchain list
+        rustup target list | findstr windows
         
-    - name: 绕过 vcpkg 使用系统库
+    - name: 检查依赖状态
       run: |
-        # 设置环境变量让 magnum-opus 使用系统库
-        echo "CARGO_FEATURE_SYSTEM_OPUS=1" >> $env:GITHUB_ENV
-        echo "CARGO_FEATURE_SYSTEM_FFMPEG=1" >> $env:GITHUB_ENV
+        echo "检查子模块:"
+        git submodule status
+        echo "检查 Cargo.toml:"
+        type Cargo.toml | findstr magnum-opus || echo "magnum-opus 未在根 Cargo.toml 中找到"
         
-    - name: 编译 RustDesk
+    - name: 检查 vcpkg 相关配置
       run: |
-        cargo build --release --bin rustdesk --features "system-opus system-ffmpeg"
-
-    - name: 检查生成的文件
-      run: |
-        dir target\release\*.exe
-        if exist target\release\rustdesk.exe (
-          echo "编译成功！"
-        ) else (
-          echo "编译失败，未找到可执行文件"
-          exit 1
-        )
+        echo "检查 vcpkg 环境:"
+        echo "VCPKG_ROOT=$env:VCPKG_ROOT"
+        echo "检查是否安装了 vcpkg:"
+        where vcpkg || echo "vcpkg 未安装"
         
-    - name: 上传二进制文件
+    - name: 尝试编译单个库
+      run: |
+        echo "尝试编译 hbb_common..."
+        cargo build -p hbb_common --release || echo "hbb_common 编译失败"
+        
+        echo "尝试编译 magnum-opus..."
+        cargo build -p magnum-opus --release || echo "magnum-opus 编译失败，这是问题所在"
+        
+    - name: 上传诊断信息
       uses: actions/upload-artifact@v4
       with:
-        name: RustDesk-Windows
-        path: target/release/rustdesk.exe
+        name: build-diagnostics
+        path: |
+          Cargo.toml
+          Cargo.lock
