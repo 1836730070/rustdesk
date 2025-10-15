@@ -1,53 +1,54 @@
 name: Build RustDesk
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        platform: [windows-latest, ubuntu-latest]
-    
-    runs-on: ${{ matrix.platform }}
-    
+  build-windows:
+    runs-on: windows-latest
     steps:
-    - name: 检查 Git 子模块状态
-      run: |
-        git submodule status
-        git submodule sync
-      continue-on-error: true
-      
-    - name: 下载源代码
+    - name: 下载源代码和子模块
       uses: actions/checkout@v4
       with:
-        submodules: recursive
-        token: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: 手动初始化子模块 (备用)
-      run: |
-        git submodule init
-        git submodule update --recursive --remote
-      
-    - name: 验证子模块
-      run: |
-        echo "检查子模块是否存在:"
-        ls -la libs/ || echo "libs 目录不存在"
-        ls -la libs/scrap/ || echo "scrap 子模块不存在"
+        submodules: recursive  # 关键：递归下载子模块
         
     - name: 安装 Rust
       uses: actions-rust-lang/setup-rust-toolchain@v4
       with:
         toolchain: stable
-        components: rust-src
-      
-    - name: Windows 依赖
-      if: matrix.platform == 'windows-latest'
+        target: x86_64-pc-windows-msvc
+        
+    - name: 安装编译工具
       run: |
         choco install -y nasm yasm
         
-    - name: Linux 依赖
-      if: matrix.platform == 'ubuntu-latest'
+    - name: 编译 RustDesk
+      run: |
+        cargo build --release --bin rustdesk
+        mkdir release
+        copy target\release\rustdesk.exe release\
+        
+    - name: 上传编译结果
+      uses: actions/upload-artifact@v4
+      with:
+        name: rustdesk-windows
+        path: release/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载源代码和子模块
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive  # 关键：递归下载子模块
+        
+    - name: 安装 Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v4
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        
+    - name: 安装 Linux 依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -55,27 +56,16 @@ jobs:
           libgtk-3-dev clang libxcb-randr0-dev \
           libxdo-dev libxfixes-dev libxcb-shape0-dev \
           libxcb-xfixes0-dev libasound2-dev libpulse-dev \
-          cmake pkg-config libavcodec-dev libavutil-dev \
-          libavformat-dev libswscale-dev libavdevice-dev
-          
-    - name: 编译项目
-      run: |
-        # 先尝试编译核心库
-        cargo build --release --lib || echo "核心库编译失败，继续尝试..."
-        # 编译主程序
-        cargo build --release --bin rustdesk
+          cmake pkg-config
         
-    - name: 准备发布文件
+    - name: 编译 RustDesk
       run: |
+        cargo build --release --bin rustdesk
         mkdir -p release
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          cp target/release/rustdesk.exe release/
-        else
-          cp target/release/rustdesk release/
-        fi
+        cp target/release/rustdesk release/
         
     - name: 上传编译结果
       uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-${{ runner.os }}
+        name: rustdesk-linux
         path: release/
