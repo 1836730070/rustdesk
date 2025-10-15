@@ -1,4 +1,4 @@
-name: Build RustDesk Alternative Deps
+name: Build RustDesk with VCPKG Fixed
 
 on:
   workflow_dispatch:
@@ -8,25 +8,14 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: 检出代码
+    - name: 检出代码和子模块
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
-    - name: 修改 Cargo.toml 使用替代依赖
-      run: |
-        # 备份 Cargo.toml
-        Copy-Item Cargo.toml Cargo.toml.backup
         
-        # 创建一个不使用 magnum-opus 的补丁版本
-        (Get-Content Cargo.toml) -replace 'magnum-opus = .*', '# magnum-opus = { git = "https://github.com/rustdesk-org/magnum-opus" }' | Set-Content Cargo.toml
-        
-        # 添加替代的音频库
-        @"
-        [patch.'https://github.com/rustdesk-org/magnum-opus']
-        magnum-opus = { git = 'https://github.com/rustdesk/rustdesk', branch = 'master' }
-        "@ >> Cargo.toml
-
+    - name: 安装 Visual Studio Build Tools
+      uses: microsoft/setup-msbuild@v1.3
+      
     - name: 安装 Rust
       run: |
         curl -sSf -o rustup-init.exe https://win.rustup.rs/x86_64
@@ -35,11 +24,24 @@ jobs:
 
     - name: 安装构建工具
       run: |
-        choco install -y nasm yasm
+        choco install -y nasm yasm cmake git
 
-    - name: 更新依赖
+    - name: 安装和配置 vcpkg
       run: |
-        cargo update
+        # 安装 vcpkg
+        git clone https://github.com/Microsoft/vcpkg.git
+        cd vcpkg
+        .\bootstrap-vcpkg.bat
+        .\vcpkg integrate install
+        
+        # 使用经典模式安装依赖（绕过清单模式）
+        .\vcpkg install opus:x64-windows --classic
+        .\vcpkg install libvpx:x64-windows --classic
+        .\vcpkg install ffmpeg:x64-windows --classic
+        
+        # 设置环境变量
+        echo "VCPKG_ROOT=$pwd" >> $env:GITHUB_ENV
+        echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
 
     - name: 编译 RustDesk
       run: |
@@ -48,5 +50,5 @@ jobs:
     - name: 上传编译结果
       uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-windows-alternative
+        name: rustdesk-windows-vcpkg
         path: target/release/rustdesk.exe
