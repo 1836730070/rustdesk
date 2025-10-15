@@ -1,50 +1,60 @@
-name: Build RustDesk Windows
+name: Build RustDesk Windows Simple
 
 on:
   workflow_dispatch:
+
+env:
+  RUST_BACKTRACE: full
+  VCPKGRS_DYNAMIC: 1
 
 jobs:
   build-windows:
     runs-on: windows-latest
     
     steps:
-    - name: 下载源代码和子模块
+    - name: 检出代码
       uses: actions/checkout@v4
       with:
         submodules: recursive
         
-    - name: 安装 Visual Studio Build Tools
-      uses: microsoft/setup-msbuild@v1.1
-      
+    - name: 设置 MSVC 环境
+      run: |
+        # 调用 vcvarsall 来设置环境
+        echo "Setting up MSVC environment..."
+        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        
     - name: 安装 Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        targets: x86_64-pc-windows-msvc
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
         
-    - name: 安装 vcpkg 和依赖
+    - name: 安装构建工具
       run: |
-        # 下载并安装 vcpkg
-        git clone https://github.com/Microsoft/vcpkg.git
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
-        .\vcpkg integrate install
+        choco install -y nasm yasm
         
-        # 安装必需的库
-        .\vcpkg install opus:x64-windows
-        .\vcpkg install libvpx:x64-windows
-        .\vcpkg install ffmpeg:x64-windows
-        
-    - name: 设置环境变量
+    - name: 绕过 vcpkg 使用系统库
       run: |
-        echo "VCPKG_ROOT=$pwd\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+        # 设置环境变量让 magnum-opus 使用系统库
+        echo "CARGO_FEATURE_SYSTEM_OPUS=1" >> $env:GITHUB_ENV
+        echo "CARGO_FEATURE_SYSTEM_FFMPEG=1" >> $env:GITHUB_ENV
         
     - name: 编译 RustDesk
       run: |
-        cargo build --release --bin rustdesk
+        cargo build --release --bin rustdesk --features "system-opus system-ffmpeg"
 
-    - name: 上传 Windows 版本
+    - name: 检查生成的文件
+      run: |
+        dir target\release\*.exe
+        if exist target\release\rustdesk.exe (
+          echo "编译成功！"
+        ) else (
+          echo "编译失败，未找到可执行文件"
+          exit 1
+        )
+        
+    - name: 上传二进制文件
       uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-windows
+        name: RustDesk-Windows
         path: target/release/rustdesk.exe
