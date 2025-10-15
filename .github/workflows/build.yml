@@ -1,0 +1,81 @@
+name: Build RustDesk
+
+on:
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: 下载源代码
+      uses: actions/checkout@v4
+      
+    - name: 安装 Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        
+    - name: 安装编译工具
+      run: |
+        choco install -y nasm yasm
+        
+    - name: 创建自定义配置
+      run: |
+        # 创建配置文件
+        @"
+        pub const RELAY_SERVER: &str = \"${{ secrets.RELAY_SERVER }}\";
+        pub const RELAY_PORT: u16 = ${{ secrets.RELAY_PORT }};
+        pub const API_SERVER: &str = \"${{ secrets.API_SERVER }}\";
+        pub const API_PORT: u16 = ${{ secrets.API_PORT }};
+        pub const ENCRYPTION_KEY: &str = \"${{ secrets.ENCRYPTION_KEY }}\";
+        "@ | Out-File -FilePath "custom_config.rs" -Encoding UTF8
+        
+    - name: 编译 RustDesk
+      run: |
+        cargo build --release --bin rustdesk
+        mkdir release
+        copy target\release\rustdesk.exe release\
+        
+    - name: 上传编译结果
+      uses: actions/upload-artifact@v4
+      with:
+        name: rustdesk-windows
+        path: release/
+        
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载源代码
+      uses: actions/checkout@v4
+      
+    - name: 安装 Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        
+    - name: 安装依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++ gcc git curl wget nasm yasm libgtk-3-dev clang
+        
+    - name: 创建自定义配置
+      run: |
+        cat > custom_config.rs << 'EOF'
+        pub const RELAY_SERVER: &str = "${{ secrets.RELAY_SERVER }}";
+        pub const RELAY_PORT: u16 = ${{ secrets.RELAY_PORT }};
+        pub const API_SERVER: &str = "${{ secrets.API_SERVER }}";
+        pub const API_PORT: u16 = ${{ secrets.API_PORT }};
+        pub const ENCRYPTION_KEY: &str = "${{ secrets.ENCRYPTION_KEY }}";
+        EOF
+        
+    - name: 编译 RustDesk
+      run: |
+        cargo build --release --bin rustdesk
+        mkdir -p release
+        cp target/release/rustdesk release/
+        
+    - name: 上传编译结果
+      uses: actions/upload-artifact@v4
+      with:
+        name: rustdesk-linux
+        path: release/
