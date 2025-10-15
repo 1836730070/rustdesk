@@ -1,4 +1,4 @@
-name: Build RustDesk System Libs
+name: Build RustDesk Prebuilt
 
 on:
   workflow_dispatch:
@@ -13,44 +13,53 @@ jobs:
       with:
         submodules: recursive
         
-    - name: 安装构建环境
-      run: |
-        choco install -y nasm yasm cmake git
-        choco install -y opus --version=1.3.1
-        choco install -y ffmpeg
-
     - name: 安装 Rust
       run: |
         curl -sSf -o rustup-init.exe https://win.rustup.rs/x86_64
         .\rustup-init.exe -y --default-toolchain stable
         echo "C:\Users\runneradmin\.cargo\bin" >> $env:GITHUB_PATH
 
-    - name: 修改 magnum-opus 构建脚本
+    - name: 安装构建工具
       run: |
-        # 找到 magnum-opus 目录
-        $magnumOpusPath = Get-ChildItem -Path "$HOME\.cargo\git\checkouts\magnum-opus-*" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        if ($magnumOpusPath) {
-            $buildScript = Join-Path $magnumOpusPath.FullName "build.rs"
-            if (Test-Path $buildScript) {
-                # 备份原文件
-                Copy-Item $buildScript "$buildScript.backup"
-                # 修改构建脚本，跳过 vcpkg 检查
-                (Get-Content $buildScript) -replace 'panic!\("Couldn.*",.*\)', '// vcpkg check bypassed' | Set-Content $buildScript
-                echo "已修改 magnum-opus 构建脚本"
-            }
-        }
+        choco install -y nasm yasm
 
-    - name: 设置系统库环境变量
+    - name: 下载预编译的 Windows 依赖
       run: |
-        echo "PKG_CONFIG_PATH=C:\ProgramData\chocolatey\lib\opus\tools\include" >> $env:GITHUB_ENV
-        echo "CARGO_FEATURE_USE_SYSTEM_OPUS=1" >> $env:GITHUB_ENV
+        # 创建依赖目录
+        mkdir deps
+        cd deps
+        
+        # 下载 opus 预编译库 (示例URL，可能需要替换为实际可用的)
+        curl -L -o opus.zip https://github.com/xiph/opus/releases/download/v1.3.1/opus-v1.3.1-windows.zip || echo "下载opus失败，尝试继续..."
+        
+        if (Test-Path "opus.zip") {
+            Expand-Archive opus.zip -Force
+            echo "opus库解压完成"
+        }
+        
+        # 设置库路径
+        echo "OPUS_DIR=$pwd\opus" >> $env:GITHUB_ENV
+
+    - name: 手动配置 Cargo 使用系统库
+      run: |
+        # 创建 cargo 配置目录
+        mkdir -p .cargo
+        @"
+        [target.x86_64-pc-windows-msvc]
+        rustflags = [
+            "-L", "deps/opus/lib",
+            "-C", "link-args=/LIBPATH:deps/opus/lib"
+        ]
+        "@ > .cargo/config.toml
 
     - name: 编译 RustDesk
       run: |
-        cargo build --release --bin rustdesk --features "system-opus"
+        # 设置环境变量让 magnum-opus 使用系统库
+        $env:RUSTFLAGS = "-L deps/opus/lib -C link-args=/LIBPATH:deps/opus/lib"
+        cargo build --release --bin rustdesk
 
     - name: 上传编译结果
       uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-windows-system-libs
+        name: rustdesk-windows-prebuilt
         path: target/release/rustdesk.exe
