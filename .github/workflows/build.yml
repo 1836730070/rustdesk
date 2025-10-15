@@ -1,4 +1,4 @@
-name: Build RustDesk Official
+name: Build RustDesk Windows
 
 on:
   workflow_dispatch:
@@ -6,34 +6,45 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-
+    
     steps:
-    - name: Checkout
+    - name: 下载源代码和子模块
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
-    - name: Setup Ninja
-      uses: ashutoshvarma/setup-ninja@master
-
-    - name: Setup Rust
+        
+    - name: 安装 Visual Studio Build Tools
+      uses: microsoft/setup-msbuild@v1.1
+      
+    - name: 安装 Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: x86_64-pc-windows-msvc
-
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-
-    - name: Install dependencies
+        
+    - name: 安装 vcpkg 和依赖
       run: |
-        choco install -y nasm yasm
-
-    - name: Build
+        # 下载并安装 vcpkg
+        git clone https://github.com/Microsoft/vcpkg.git
+        cd vcpkg
+        .\bootstrap-vcpkg.bat
+        .\vcpkg integrate install
+        
+        # 安装必需的库
+        .\vcpkg install opus:x64-windows
+        .\vcpkg install libvpx:x64-windows
+        .\vcpkg install ffmpeg:x64-windows
+        
+    - name: 设置环境变量
+      run: |
+        echo "VCPKG_ROOT=$pwd\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+        
+    - name: 编译 RustDesk
       run: |
         cargo build --release --bin rustdesk
 
-    - name: Upload
+    - name: 上传 Windows 版本
       uses: actions/upload-artifact@v4
       with:
-        name: RustDesk-Windows
+        name: rustdesk-windows
         path: target/release/rustdesk.exe
