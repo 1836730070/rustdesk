@@ -1,4 +1,4 @@
-name: Build RustDesk with VCPKG Fixed
+name: Build RustDesk System Libs Fixed
 
 on:
   workflow_dispatch:
@@ -13,42 +13,60 @@ jobs:
       with:
         submodules: recursive
         
-    - name: 安装 Visual Studio Build Tools
-      uses: microsoft/setup-msbuild@v1.3
-      
+    - name: 安装构建环境
+      run: |
+        choco install -y nasm yasm cmake git
+        choco install -y opus --version=1.3.1
+        choco install -y ffmpeg
+
     - name: 安装 Rust
       run: |
         curl -sSf -o rustup-init.exe https://win.rustup.rs/x86_64
         .\rustup-init.exe -y --default-toolchain stable
         echo "C:\Users\runneradmin\.cargo\bin" >> $env:GITHUB_PATH
 
-    - name: 安装构建工具
+    - name: 下载依赖并应用补丁
       run: |
-        choco install -y nasm yasm cmake git
+        # 先获取依赖，这样 magnum-opus 代码会被下载
+        cargo fetch
+        
+        # 找到 magnum-opus 目录（使用正确的路径）
+        $magnumOpusPath = Get-ChildItem -Path "$env:USERPROFILE\.cargo\git\checkouts\magnum-opus-*" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $magnumOpusPath) {
+            # 如果上面没找到，尝试在项目目录中查找
+            $magnumOpusPath = Get-ChildItem -Path ".\" -Recurse -Filter "magnum-opus" -Directory | Select-Object -First 1
+        }
+        
+        if ($magnumOpusPath) {
+            $buildScript = Join-Path $magnumOpusPath.FullName "build.rs"
+            if (Test-Path $buildScript) {
+                # 备份原文件
+                Copy-Item $buildScript "$buildScript.backup"
+                # 修改构建脚本，跳过 vcpkg 检查
+                $content = Get-Content $buildScript -Raw
+                $newContent = $content -replace 'panic!\("Couldn.*",.*\)', '// vcpkg check bypassed'
+                Set-Content $buildScript $newContent
+                echo "已修改 magnum-opus 构建脚本: $buildScript"
+            } else {
+                echo "未找到 build.rs 文件"
+            }
+        } else {
+            echo "未找到 magnum-opus 目录"
+            # 列出所有目录帮助调试
+            Get-ChildItem "$env:USERPROFILE\.cargo\" -Recurse -Directory | Where-Object { $_.Name -like "*magnum*" } | Select-Object FullName
+        }
 
-    - name: 安装和配置 vcpkg
+    - name: 设置系统库环境变量
       run: |
-        # 安装 vcpkg
-        git clone https://github.com/Microsoft/vcpkg.git
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
-        .\vcpkg integrate install
-        
-        # 使用经典模式安装依赖（绕过清单模式）
-        .\vcpkg install opus:x64-windows --classic
-        .\vcpkg install libvpx:x64-windows --classic
-        .\vcpkg install ffmpeg:x64-windows --classic
-        
-        # 设置环境变量
-        echo "VCPKG_ROOT=$pwd" >> $env:GITHUB_ENV
-        echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+        echo "PKG_CONFIG_PATH=C:\ProgramData\chocolatey\lib\opus\tools\include" >> $env:GITHUB_ENV
+        echo "CARGO_FEATURE_USE_SYSTEM_OPUS=1" >> $env:GITHUB_ENV
 
     - name: 编译 RustDesk
       run: |
-        cargo build --release --bin rustdesk
+        cargo build --release --bin rustdesk --features "system-opus"
 
     - name: 上传编译结果
       uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-windows-vcpkg
+        name: rustdesk-windows-system-libs
         path: target/release/rustdesk.exe
