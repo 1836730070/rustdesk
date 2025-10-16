@@ -4,22 +4,6 @@
 )]
 
 use librustdesk::*;
-use hbb_common::{config::Config, net::UdpSocket};
-use std::sync::Arc;
-
-fn main() {
-    // 强制覆盖网络配置（在你的代码中插入此段）
-    let mut cfg = Config::default();
-    cfg.set_rendezvous_server("172.24.2.38:21114".to_owned()); // ID服务器地址+端口
-    cfg.set_key("8anQlXk0159uDnLAKj6eIgzYthtWgFXciBUD8zSwKJw=".to_owned()); // ID服务器公钥（必填，否则无法认证）
-    cfg.set_relay_server("172.24.2.38:21115".to_owned()); // 中继服务器地址+端口
-
-    // 锁定配置，防止后续被环境变量或UI修改（关键！）
-    cfg.lock(); 
-
-    // 原代码继续执行...
-    rustdesk::run(cfg).unwrap();
-}
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 fn main() {
